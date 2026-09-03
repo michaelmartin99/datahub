@@ -1,5 +1,6 @@
 import logging
 from typing import TYPE_CHECKING
+import re
 
 # Conditional import for OpenLineage (may not be installed)
 try:
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 OL_SCHEME_TWEAKS = {
     "sqlserver": "mssql",
     "awsathena": "athena",
+    "gs": "gcs",
 }
 
 
@@ -83,7 +85,7 @@ def _sanitize_ol_dataset_name(name: str) -> str:
 
 
 def translate_ol_to_datahub_urn(
-    ol_uri: "OpenLineageDataset", env: str = builder.DEFAULT_ENV
+    ol_uri: "OpenLineageDataset", env: str = builder.DEFAULT_ENV,
 ) -> str:
     """Translate OpenLineage dataset URI to DataHub URN.
 
@@ -98,6 +100,26 @@ def translate_ol_to_datahub_urn(
     name = _sanitize_ol_dataset_name(ol_uri.name)
 
     scheme, *rest = namespace.split("://", maxsplit=1)
-
     platform = OL_SCHEME_TWEAKS.get(scheme, scheme)
+
+
+    patterns = [
+        r"/\d{2}/\d{2}/\d{4}/AWSDynamoDB",
+        r"/dt=\d{4}-\d{2}-\d{2}",
+        r"/year=\d{4}/month=\d{2}/day=\d{2}",
+        r"/date=\d{4}-\d{2}-\d{2}",
+        r"/\d{4}/\d{2}/\d{2}",
+        r"/year=\d{4}/month=\d{2}/day=\d{2}/hour=\d{2}"
+    ]
+
+    for pattern in patterns:
+        name = re.sub( pattern, '', name)
+
+    if rest:
+        bucket_name = rest[0].rstrip("/")
+
+        if bucket_name:
+            name = f'{bucket_name}/{name}'
+
     return builder.make_dataset_urn(platform=platform, name=name, env=env)
+
