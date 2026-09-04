@@ -1,5 +1,6 @@
 import logging
 from typing import TYPE_CHECKING
+import re
 
 # Conditional import for OpenLineage (may not be installed)
 try:
@@ -7,7 +8,6 @@ try:
 
     OPENLINEAGE_AVAILABLE = True
 except ImportError:
-    # Not available when openlineage packages aren't installed
     OpenLineageDataset = None  # type: ignore[assignment,misc]
     OPENLINEAGE_AVAILABLE = False
 
@@ -22,8 +22,19 @@ logger = logging.getLogger(__name__)
 OL_SCHEME_TWEAKS = {
     "sqlserver": "mssql",
     "awsathena": "athena",
+    "gs": "gcs",
 }
 
+# More specific patterns must come before less specific ones to avoid
+# partial matches that prevent the longer pattern from ever being tried.
+_OL_PARTITION_PATTERNS: list[str] = [
+    r"/\d{2}/\d{2}/\d{4}/AWSDynamoDB",
+    r"/dt=\d{4}-\d{2}-\d{2}",
+    r"/year=\d{4}/month=\d{2}/day=\d{2}/hour=\d{2}",  # must precede day-only
+    r"/year=\d{4}/month=\d{2}/day=\d{2}",
+    r"/date=\d{4}-\d{2}-\d{2}",
+    r"/\d{4}/\d{2}/\d{2}",
+]
 
 # Fire the sanitiser warning at most once per worker process
 _warning_logged: bool = False
@@ -82,8 +93,20 @@ def _sanitize_ol_dataset_name(name: str) -> str:
     return sanitized
 
 
+def _strip_partition_segments(name: str) -> str:
+    """Remove known partition path segments from an OL dataset name.
+
+    Patterns are applied in order from most specific to least specific
+    to avoid partial matches swallowing longer patterns.
+    """
+    for pattern in _OL_PARTITION_PATTERNS:
+        name = re.sub(pattern, "", name)
+    return name.strip("/")
+
+
 def translate_ol_to_datahub_urn(
-    ol_uri: "OpenLineageDataset", env: str = builder.DEFAULT_ENV
+    ol_uri: "OpenLineageDataset",
+    env: str = builder.DEFAULT_ENV,
 ) -> str:
     """Translate OpenLineage dataset URI to DataHub URN.
 
@@ -96,8 +119,14 @@ def translate_ol_to_datahub_urn(
     """
     namespace = ol_uri.namespace
     name = _sanitize_ol_dataset_name(ol_uri.name)
+    name = _strip_partition_segments(name)
 
     scheme, *rest = namespace.split("://", maxsplit=1)
-
     platform = OL_SCHEME_TWEAKS.get(scheme, scheme)
+
+    if rest:
+        bucket_name = rest[0].strip("/")
+        if bucket_name:
+            name = f"{bucket_name}/{name}".strip("/")
+
     return builder.make_dataset_urn(platform=platform, name=name, env=env)
