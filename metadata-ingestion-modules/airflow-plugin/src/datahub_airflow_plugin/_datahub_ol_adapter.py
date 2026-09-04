@@ -18,7 +18,7 @@ import datahub.emitter.mce_builder as builder
 
 logger = logging.getLogger(__name__)
 
-OBJECT_STORE_PLATFORMS = ('gs', 's3')
+OBJECT_STORE_PLATFORMS = ('gcs', 's3')
 
 OL_SCHEME_TWEAKS = {
     "sqlserver": "mssql",
