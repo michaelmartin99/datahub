@@ -18,6 +18,7 @@ import datahub.emitter.mce_builder as builder
 
 logger = logging.getLogger(__name__)
 
+OBJECT_STORE_PLATFORMS = ('gs', 's3')
 
 OL_SCHEME_TWEAKS = {
     "sqlserver": "mssql",
@@ -126,7 +127,7 @@ def translate_ol_to_datahub_urn(
 
     if rest:
         bucket_name = rest[0].strip("/")
-        if bucket_name:
+        if bucket_name and platform in OBJECT_STORE_PLATFORMS:
             name = f"{bucket_name}/{name}".strip("/")
 
     return builder.make_dataset_urn(platform=platform, name=name, env=env)
